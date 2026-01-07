@@ -30,7 +30,7 @@
             class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-4"
           >
             <img
-              :src="viewImageUrl || presetView?.viewImage || getPlaceholderImage('view')"
+              :src="viewImage.imageData.value.previewUrl || presetView?.viewImage || getPlaceholderImage('view')"
               :alt="`${presetView?.presetName} 視角圖`"
               class="max-h-64 w-full rounded object-contain"
               @error="(e) => handleImageError(e, 'view')"
@@ -55,7 +55,7 @@
           >
             <img
               :src="
-                locationImageUrl || presetView?.locationImage || getPlaceholderImage('location')
+                locationImage.imageData.value.previewUrl || presetView?.locationImage || getPlaceholderImage('location')
               "
               :alt="`${presetView?.presetName} 可視圖`"
               class="max-h-64 w-full rounded object-contain"
@@ -72,7 +72,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
+import { useDialogWidth, useImageUpload } from '../composables'
+import { ElMessage } from 'element-plus'
 
 /**
  * 預置點視角與點位圖對話框組件
@@ -100,22 +102,29 @@ const emit = defineEmits<{
   'image-upload': [cameraId: number, presetId: number, type: 'view' | 'location', file: File]
 }>()
 
-const viewImageUrl = ref<string | null>(null)
-const locationImageUrl = ref<string | null>(null)
-
 /**
  * 響應式對話框寬度
  */
-const dialogWidth = computed(() => {
-  if (typeof window !== 'undefined') {
-    if (window.innerWidth < 640) {
-      return '95%'
-    } else if (window.innerWidth < 768) {
-      return '90%'
-    }
-    return '800px'
-  }
-  return '800px'
+const dialogWidth = useDialogWidth({
+  large: '800px',
+})
+
+/**
+ * 視角圖上傳處理
+ */
+const viewImage = useImageUpload({
+  maxSize: 5 * 1024 * 1024,
+  allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+  onError: (message) => ElMessage.error(message),
+})
+
+/**
+ * 可視圖上傳處理
+ */
+const locationImage = useImageUpload({
+  maxSize: 5 * 1024 * 1024,
+  allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+  onError: (message) => ElMessage.error(message),
 })
 
 /**
@@ -141,33 +150,13 @@ function getPlaceholderImage(type: 'view' | 'location'): string {
 function handleImageUpload(file: File, type: 'view' | 'location'): boolean {
   if (!props.presetView) return false
 
-  // 驗證檔案類型
-  if (!file.type.startsWith('image/')) {
-    // 這裡可以使用 Element Plus 的 Message 顯示錯誤
-    return false
-  }
+  const imageUpload = type === 'view' ? viewImage : locationImage
+  const success = imageUpload.handleUpload(file)
 
-  // 驗證檔案大小（例如：最大 5MB）
-  const maxSize = 5 * 1024 * 1024 // 5MB
-  if (file.size > maxSize) {
-    // 這裡可以使用 Element Plus 的 Message 顯示錯誤
-    return false
+  if (success === false && imageUpload.imageData.value.file) {
+    // 發送事件給父組件處理實際上傳
+    emit('image-upload', props.presetView.cameraId, props.presetView.presetId, type, file)
   }
-
-  // 建立預覽 URL
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const result = e.target?.result as string
-    if (type === 'view') {
-      viewImageUrl.value = result
-    } else {
-      locationImageUrl.value = result
-    }
-  }
-  reader.readAsDataURL(file)
-
-  // 發送事件給父組件處理實際上傳
-  emit('image-upload', props.presetView.cameraId, props.presetView.presetId, type, file)
 
   return false // 阻止自動上傳，由父組件處理
 }
@@ -189,11 +178,11 @@ watch(
   () => [props.visible, props.presetView],
   ([visible]) => {
     if (!visible) {
-      viewImageUrl.value = null
-      locationImageUrl.value = null
+      viewImage.clearImage()
+      locationImage.clearImage()
     } else if (props.presetView) {
-      viewImageUrl.value = props.presetView.viewImage || null
-      locationImageUrl.value = props.presetView.locationImage || null
+      viewImage.setPreviewUrl(props.presetView.viewImage || null)
+      locationImage.setPreviewUrl(props.presetView.locationImage || null)
     }
   },
 )

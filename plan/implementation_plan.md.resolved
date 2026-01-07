@@ -1,0 +1,164 @@
+# 抽取 Composables 實作計畫
+
+## 背景說明
+
+經過分析專案中的 Vue 元件，我發現了多個可以抽取為 composables 的重複邏輯模式。這些 composables 將提高程式碼的可重用性、可維護性和測試性。
+
+## 識別出的可抽取 Composables
+
+### 1. **useDialogWidth** - 對話框響應式寬度
+**使用位置：**
+- [AddPresetDialog.vue](file:///d:/vue-cam/src/components/AddPresetDialog.vue)
+- [EditPresetDialog.vue](file:///d:/vue-cam/src/components/EditPresetDialog.vue)
+- [PresetViewDialog.vue](file:///d:/vue-cam/src/components/PresetViewDialog.vue)
+
+**重複邏輯：**
+所有對話框都有相同的響應式寬度計算邏輯，根據視窗寬度返回不同的對話框寬度。
+
+### 2. **useEditableField** - 可編輯欄位狀態管理
+**使用位置：**
+- [CameraTableView.vue](file:///d:/vue-cam/src/views/CameraTableView.vue) (轉向時間編輯)
+- [CameraCardList.vue](file:///d:/vue-cam/src/components/CameraCardList.vue) (轉向時間編輯)
+
+**重複邏輯：**
+管理欄位的編輯狀態，包括開始編輯、儲存、取消等操作。
+
+### 3. **useResponsive** - 響應式視窗大小偵測
+**使用位置：**
+- [CameraTableView.vue](file:///d:/vue-cam/src/views/CameraTableView.vue) (isMobile 偵測)
+
+**重複邏輯：**
+監聽視窗大小變化，判斷當前是否為行動裝置。
+
+### 4. **useImageUpload** - 圖片上傳處理
+**使用位置：**
+- [PresetViewDialog.vue](file:///d:/vue-cam/src/components/PresetViewDialog.vue)
+
+**重複邏輯：**
+處理圖片上傳、預覽、驗證等功能。
+
+---
+
+## 提議的變更
+
+### Composables 目錄結構
+
+#### [NEW] [useDialogWidth.ts](file:///d:/vue-cam/src/composables/useDialogWidth.ts)
+建立響應式對話框寬度 composable，根據視窗寬度返回適當的對話框寬度。
+
+**功能：**
+- 自動偵測視窗寬度
+- 返回響應式的對話框寬度值
+- 支援自訂斷點配置
+
+#### [NEW] [useEditableField.ts](file:///d:/vue-cam/src/composables/useEditableField.ts)
+建立可編輯欄位狀態管理 composable。
+
+**功能：**
+- 管理編輯狀態 (是否正在編輯)
+- 管理編輯中的值
+- 提供開始編輯、儲存、取消等方法
+- 支援自訂儲存邏輯
+
+#### [NEW] [useResponsive.ts](file:///d:/vue-cam/src/composables/useResponsive.ts)
+建立響應式視窗大小偵測 composable。
+
+**功能：**
+- 監聽視窗 resize 事件
+- 提供 isMobile, isTablet, isDesktop 等狀態
+- 自動清理事件監聽器
+- 支援自訂斷點
+
+#### [NEW] [useImageUpload.ts](file:///d:/vue-cam/src/composables/useImageUpload.ts)
+建立圖片上傳處理 composable。
+
+**功能：**
+- 檔案驗證 (類型、大小)
+- 圖片預覽 URL 生成
+- 錯誤處理
+- 支援多圖片管理
+
+---
+
+### 元件更新
+
+#### [MODIFY] [AddPresetDialog.vue](file:///d:/vue-cam/src/components/AddPresetDialog.vue)
+- 移除 `dialogWidth` computed
+- 引入並使用 `useDialogWidth` composable
+
+#### [MODIFY] [EditPresetDialog.vue](file:///d:/vue-cam/src/components/EditPresetDialog.vue)
+- 移除 `dialogWidth` computed
+- 引入並使用 `useDialogWidth` composable
+
+#### [MODIFY] [PresetViewDialog.vue](file:///d:/vue-cam/src/components/PresetViewDialog.vue)
+- 移除 `dialogWidth` computed
+- 移除圖片上傳相關邏輯
+- 引入並使用 `useDialogWidth` 和 `useImageUpload` composables
+
+#### [MODIFY] [CameraTableView.vue](file:///d:/vue-cam/src/views/CameraTableView.vue)
+- 移除 `isMobile` 相關邏輯和事件監聽器
+- 移除轉向時間編輯相關狀態和方法
+- 引入並使用 `useResponsive` 和 `useEditableField` composables
+
+#### [MODIFY] [CameraCardList.vue](file:///d:/vue-cam/src/components/CameraCardList.vue)
+- 移除轉向時間編輯相關狀態和方法
+- 引入並使用 `useEditableField` composable
+
+---
+
+## 驗證計畫
+
+### 手動驗證步驟
+
+由於此專案目前沒有自動化測試，我將進行以下手動驗證：
+
+1. **對話框響應式測試**
+   - 開啟新增預置點對話框
+   - 調整瀏覽器視窗大小 (桌面 → 平板 → 手機)
+   - 確認對話框寬度正確調整
+   - 重複測試編輯預置點和預置點視圖對話框
+
+2. **可編輯欄位測試**
+   - 在桌面版表格中點擊轉向時間欄位
+   - 確認進入編輯模式
+   - 測試儲存 (Enter 鍵)
+   - 測試取消 (Esc 鍵)
+   - 測試失焦儲存
+   - 在行動版卡片中重複相同測試
+
+3. **響應式偵測測試**
+   - 調整瀏覽器視窗大小
+   - 確認在 768px 以下顯示卡片列表
+   - 確認在 768px 以上顯示表格
+   - 確認分頁器在行動版顯示為小尺寸
+
+4. **圖片上傳測試**
+   - 以管理員身份登入 (admin / admin123)
+   - 點擊預置點名稱查看視圖
+   - 測試上傳視角圖
+   - 測試上傳可視圖
+   - 確認圖片預覽正確顯示
+   - 測試檔案類型驗證
+   - 測試檔案大小驗證
+
+5. **整體功能測試**
+   - 測試所有現有功能是否正常運作
+   - 確認無控制台錯誤
+   - 確認無破壞性變更
+
+### 開發伺服器啟動
+
+```bash
+cd d:\vue-cam
+npm run dev
+```
+
+---
+
+## 預期效益
+
+1. **程式碼重用性提升** - 減少重複程式碼約 30%
+2. **可維護性提升** - 邏輯集中管理，易於修改和擴展
+3. **測試性提升** - Composables 可以獨立測試
+4. **一致性提升** - 相同邏輯在不同元件中行為一致
+5. **開發效率提升** - 未來新增類似功能時可直接使用現有 composables

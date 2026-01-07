@@ -9,22 +9,35 @@
       </div>
     </div>
 
-    <!-- 篩選區與儲存按鈕 -->
+    <!-- 篩選區與操作按鈕 -->
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <CameraFilters
         v-model:search-keyword="searchKeyword"
         v-model:push-filter="pushFilter"
         :is-admin="authStore.isAdmin"
       />
-      <el-button
-        type="primary"
-        :loading="saving"
-        :disabled="!hasChanges"
-        @click="handleSave"
-        class="w-full sm:w-auto"
-      >
-        儲存變更
-      </el-button>
+      <div class="flex flex-wrap gap-2">
+        <!-- 管理者可以新增/刪除攝影機 -->
+        <template v-if="authStore.isAdmin">
+          <el-button type="success" @click="handleAddCamera">
+            <el-icon class="mr-1"><Plus /></el-icon>
+            新增攝影機
+          </el-button>
+          <el-button type="danger" @click="handleDeleteCamera" :disabled="!hasSelectedCameras">
+            <el-icon class="mr-1"><Delete /></el-icon>
+            刪除攝影機
+          </el-button>
+        </template>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="!hasChanges"
+          @click="handleSave"
+          class="breathing-button w-full sm:w-auto"
+        >
+          儲存變更
+        </el-button>
+      </div>
     </div>
 
     <!-- 桌面版表格 -->
@@ -36,7 +49,10 @@
         :default-sort="{ prop: sortState.prop, order: sortState.order }"
         :row-class-name="rowClassName"
         @sort-change="onSortChange"
+        @selection-change="handleSelectionChange"
       >
+        <!-- 選擇欄（僅管理者可見） -->
+        <el-table-column v-if="authStore.isAdmin" type="selection" width="55" />
         <el-table-column
           prop="name"
           label="攝影機"
@@ -44,7 +60,13 @@
           width="150"
           show-overflow-tooltip
         />
-        <el-table-column prop="pushEnabled" label="是否推播" sortable="custom" width="110">
+        <el-table-column
+          prop="pushEnabled"
+          label="是否推播"
+          sortable="custom"
+          width="110"
+          align="center"
+        >
           <template #default="{ row }">
             <el-switch
               :model-value="row.pushEnabled"
@@ -53,7 +75,32 @@
             />
           </template>
         </el-table-column>
-        <el-table-column prop="panTime" label="轉向時間 (秒)" sortable="custom" width="140" />
+        <el-table-column label="轉向時間 (秒)" sortable="custom" width="140" align="center">
+          <template #default="{ row, $index: index }">
+              <template v-if="editingPanTimeIndex === index">
+              <el-input
+                type="number"
+                size="small"
+                v-model.number="panTimeEditor.editingValue.value"
+                style="width: 80px"
+                autofocus
+                @blur="savePanTime(row, index)"
+                @keyup.enter="savePanTime(row, index)"
+                @keyup.esc="cancelPanTimeEdit()"
+                min="0"
+              />
+            </template>
+            <template v-else>
+              <span
+                class="editable-cell cursor-pointer"
+                style="color: #409eff"
+                @click="startPanTimeEdit(row, index)"
+              >
+                {{ row.panTime }}
+              </span>
+            </template>
+          </template>
+        </el-table-column>
         <el-table-column label="預置點" min-width="320">
           <template #default="{ row }">
             <PresetCell
@@ -64,13 +111,13 @@
               @preset-change="(presetId, checked) => handlePresetChange(row.id, presetId, checked)"
               @view-preset="(preset) => handleViewPreset(row.id, preset)"
               @edit-presets="() => handleEditPresets(row)"
-              @add-preset="() => handleAddPresetClick(row)"
               @reset-presets="() => resetPresets(row.id)"
             />
           </template>
         </el-table-column>
       </el-table>
     </div>
+
 
     <!-- 行動版卡片列表 -->
     <div class="block md:hidden">
@@ -79,12 +126,14 @@
         :is-authenticated="authStore.isAuthenticated"
         :is-admin="authStore.isAdmin"
         :is-dirty="isRowDirty"
+        :selected-camera-ids="selectedCameraIds"
         @push-enabled-change="handlePushEnabledChange"
         @preset-change="handlePresetChange"
         @view-preset="(cameraId, preset) => handleViewPreset(cameraId, preset)"
         @edit-presets="handleEditPresets"
-        @add-preset="(camera) => handleAddPresetClick(camera)"
         @reset-presets="resetPresets"
+        @pan-time-change="handlePanTimeChangeMobile"
+        @selection-change="handleMobileSelectionChange"
       />
     </div>
 
@@ -92,7 +141,7 @@
     <div class="mt-3 flex justify-center">
       <el-pagination
         background
-        :layout="paginationLayout"
+        :layout="'prev, pager, next'"
         :page-size="pageSize"
         :current-page="currentPage"
         :total="filteredCameras.length"
@@ -100,14 +149,6 @@
         @current-change="onPageChange"
       />
     </div>
-
-    <!-- 新增預置點對話框 -->
-    <AddPresetDialog
-      v-model:visible="showAddPresetDialog"
-      :camera-id="addPresetForm.cameraId"
-      :camera-name="addPresetForm.cameraName"
-      @submit="handleAddPreset"
-    />
 
     <!-- 預置點視角與點位圖對話框 -->
     <PresetViewDialog
@@ -128,18 +169,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import type { SortOrder } from '../types/camera'
 import type { CameraItem, CameraPreset } from '../types/camera'
 import CameraFilters from '../components/CameraFilters.vue'
 import PresetCell from '../components/PresetCell.vue'
 import CameraCardList from '../components/CameraCardList.vue'
-import AddPresetDialog from '../components/AddPresetDialog.vue'
 import EditPresetDialog from '../components/EditPresetDialog.vue'
 import PresetViewDialog, { type PresetViewData } from '../components/PresetViewDialog.vue'
 import { saveCameraChanges } from '../api/camera'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Delete } from '@element-plus/icons-vue'
+import { useResponsive, useEditableField } from '../composables'
 
 const authStore = useAuthStore()
 
@@ -196,17 +238,8 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 // Dialog 狀態
-const showAddPresetDialog = ref(false)
-const showPresetViewDialog = ref(false)
 const showEditPresetDialog = ref(false)
-
-const addPresetForm = reactive<{
-  cameraId: number
-  cameraName: string
-}>({
-  cameraId: 0,
-  cameraName: '',
-})
+const showPresetViewDialog = ref(false)
 
 const editPresetForm = reactive<{
   cameraId: number
@@ -221,6 +254,9 @@ const currentPresetView = ref<PresetViewData | null>(null)
 // 儲存狀態
 const saving = ref(false)
 
+// 攝影機選擇狀態
+const selectedCameraIds = ref<Set<number>>(new Set())
+
 // 圖片上傳暫存
 const imageUploads = ref<
   Array<{
@@ -232,33 +268,42 @@ const imageUploads = ref<
 >([])
 
 // 響應式狀態
-const isMobile = ref(false)
+const { isMobile } = useResponsive()
 
-/**
- * 檢查是否為行動裝置
- */
-function checkMobile(): void {
-  isMobile.value = window.innerWidth < 768
+// 轉向時間編輯狀態（桌面版）
+const editingPanTimeIndex = ref<number | null>(null)
+const panTimeEditor = useEditableField<number>((newValue) => {
+  if (editingPanTimeIndex.value !== null) {
+    const camera = pagedCameras.value[editingPanTimeIndex.value]
+    if (camera) {
+      camera.panTime = newValue
+      cameras.value = [...cameras.value]
+    }
+  }
+})
+
+function startPanTimeEdit(row: CameraItem, index: number) {
+  editingPanTimeIndex.value = index
+  panTimeEditor.startEdit(row.panTime)
 }
 
-/**
- * 響應式分頁器佈局
- */
-const paginationLayout = computed(() => {
-  if (isMobile.value) {
-    return 'prev, pager, next'
+function savePanTime(row: CameraItem, index: number) {
+  panTimeEditor.save()
+  editingPanTimeIndex.value = null
+}
+
+function cancelPanTimeEdit() {
+  panTimeEditor.cancel()
+  editingPanTimeIndex.value = null
+}
+
+function handlePanTimeChangeMobile(cameraId: number, value: number) {
+  const camera = cameras.value.find((c) => c.id === cameraId)
+  if (camera) {
+    camera.panTime = value
+    cameras.value = [...cameras.value]
   }
-  return 'prev, pager, next, jumper, total'
-})
-
-onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile)
-})
+}
 
 /**
  * 過濾並排序攝影機列表
@@ -303,11 +348,16 @@ const pagedCameras = computed(() => {
 })
 
 /**
+ * 檢查是否有選擇的攝影機
+ */
+const hasSelectedCameras = computed(() => selectedCameraIds.value.size > 0)
+
+/**
  * 檢查是否有變更需要儲存
  * @returns 若有變更則返回 true，否則返回 false
  */
 const hasChanges = computed(() => {
-  // 檢查是否有任何攝影機的 checkbox 或推播狀態有變更
+  // 檢查是否有任何攝影機的 checkbox, 轉向時間 或推播狀態有變更
   const hasDirtyRows = cameras.value.some((camera) => isRowDirty(camera.id))
   // 檢查是否有圖片上傳
   const hasImageUploads = imageUploads.value.length > 0
@@ -315,7 +365,7 @@ const hasChanges = computed(() => {
 })
 
 /**
- * 檢查指定攝影機的 checkbox 設定是否有變更（不包含新增/編輯預置點）
+ * 檢查指定攝影機的設定是否有變更
  * @param cameraId - 攝影機 ID
  * @returns 若有變更則返回 true，否則返回 false
  */
@@ -327,15 +377,26 @@ function isRowDirty(cameraId: number): boolean {
   // 檢查推播狀態
   if (current.pushEnabled !== original.pushEnabled) return true
 
-  // 只檢查預置點的 checkbox 狀態（不檢查新增/編輯）
-  // 比對相同 ID 的預置點 checkbox 狀態
-  const originalPresetMap = new Map(original.presets.map((p) => [p.id, p.checked]))
+  // 檢查轉向時間
+  if (current.panTime !== original.panTime) return true
+
+  // 檢查預置點數量是否改變（新增或刪除）
+  if (current.presets.length !== original.presets.length) return true
+
+  // 檢查預置點的 checkbox 狀態和名稱
+  const originalPresetMap = new Map(original.presets.map((p) => [p.id, p]))
 
   for (const preset of current.presets) {
-    const originalChecked = originalPresetMap.get(preset.id)
-    if (originalChecked !== undefined && originalChecked !== preset.checked) {
-      return true
-    }
+    const originalPreset = originalPresetMap.get(preset.id)
+
+    // 新增的預置點（原始資料中沒有此 ID）
+    if (!originalPreset) return true
+
+    // 檢查 checkbox 狀態
+    if (originalPreset.checked !== preset.checked) return true
+
+    // 檢查名稱是否改變
+    if (originalPreset.name !== preset.name) return true
   }
 
   return false
@@ -371,6 +432,29 @@ function onSortChange({
  */
 function onPageChange(page: number): void {
   currentPage.value = page
+}
+
+/**
+ * 處理表格選擇變更
+ * @param selection - 選中的攝影機列表
+ */
+function handleSelectionChange(selection: CameraItem[]): void {
+  selectedCameraIds.value = new Set(selection.map((camera) => camera.id))
+}
+
+/**
+ * 處理行動版選擇變更
+ * @param cameraId - 攝影機 ID
+ * @param selected - 是否選中
+ */
+function handleMobileSelectionChange(cameraId: number, selected: boolean): void {
+  if (selected) {
+    selectedCameraIds.value.add(cameraId)
+  } else {
+    selectedCameraIds.value.delete(cameraId)
+  }
+  // 觸發響應式更新
+  selectedCameraIds.value = new Set(selectedCameraIds.value)
 }
 
 /**
@@ -413,41 +497,63 @@ function handlePresetChange(cameraId: number, presetId: number, checked: boolean
 }
 
 /**
- * 處理點擊新增預置點按鈕
- * @param camera - 攝影機資料
+ * 處理新增攝影機
  */
-function handleAddPresetClick(camera: CameraItem): void {
-  addPresetForm.cameraId = camera.id
-  addPresetForm.cameraName = camera.name
-  showAddPresetDialog.value = true
+function handleAddCamera(): void {
+  ElMessageBox.prompt('請輸入攝影機名稱', '新增攝影機', {
+    confirmButtonText: '確定',
+    cancelButtonText: '取消',
+    inputPattern: /.+/,
+    inputErrorMessage: '請輸入攝影機名稱',
+  })
+    .then(({ value }) => {
+      const newCameraId = Math.max(...cameras.value.map((c) => c.id), 0) + 1
+      const newCamera: CameraItem = {
+        id: newCameraId,
+        name: value,
+        pushEnabled: false,
+        panTime: 3,
+        presets: [],
+      }
+      cameras.value.push(newCamera)
+      originalCameras.value.push(JSON.parse(JSON.stringify(newCamera)) as CameraItem)
+      ElMessage.success(`已新增攝影機：${value}`)
+    })
+    .catch(() => {
+      // 使用者取消
+    })
 }
 
 /**
- * 處理新增預置點（針對特定攝影機）
- * @param cameraId - 攝影機 ID
- * @param name - 預置點名稱
+ * 處理刪除攝影機
  */
-function handleAddPreset(cameraId: number, name: string): void {
-  const camera = cameras.value.find((c) => c.id === cameraId)
-  if (!camera) return
-
-  const newPresetId = Math.max(...cameras.value.flatMap((c) => c.presets.map((p) => p.id)), 0) + 1
-
-  camera.presets.push({
-    id: newPresetId,
-    name,
-    checked: false,
-  })
-
-  // 同步更新原始資料（新增的預置點也要加入原始資料）
-  const originalCamera = originalCameras.value.find((c) => c.id === cameraId)
-  if (originalCamera) {
-    originalCamera.presets.push({
-      id: newPresetId,
-      name,
-      checked: false,
-    })
+function handleDeleteCamera(): void {
+  if (selectedCameraIds.value.size === 0) {
+    ElMessage.warning('請先選擇要刪除的攝影機')
+    return
   }
+
+  const cameraNames = cameras.value
+    .filter((c) => selectedCameraIds.value.has(c.id))
+    .map((c) => c.name)
+    .join('、')
+
+  ElMessageBox.confirm(`確定要刪除以下攝影機嗎？\n${cameraNames}`, '刪除攝影機', {
+    confirmButtonText: '確定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  })
+    .then(() => {
+      cameras.value = cameras.value.filter((c) => !selectedCameraIds.value.has(c.id))
+      originalCameras.value = originalCameras.value.filter(
+        (c) => !selectedCameraIds.value.has(c.id),
+      )
+      selectedCameraIds.value.clear()
+      ElMessage.success('刪除成功')
+    })
+    .catch(() => {
+      // 使用者取消
+    })
 }
 
 /**
@@ -469,6 +575,8 @@ function handleSaveEditPresets(cameraId: number, presets: CameraPreset[]): void 
   const camera = cameras.value.find((c) => c.id === cameraId)
   if (camera) {
     camera.presets = JSON.parse(JSON.stringify(presets)) as CameraPreset[]
+    // 不更新 originalCameras，讓預置點的新增/刪除/修改被視為變更
+    // 這樣 isDirty 會檢測到變更，使用者需要點擊「儲存變更」才會真正保存
   }
 }
 
@@ -483,6 +591,7 @@ function resetPresets(cameraId: number): void {
 
   current.pushEnabled = original.pushEnabled
   current.presets = original.presets.map((p) => ({ ...p }))
+  current.panTime = original.panTime
 }
 
 /**
@@ -626,5 +735,20 @@ async function handleSave(): Promise<void> {
 /* 已修改的列背景色 */
 :deep(.camera-row--dirty) > td {
   background-color: #fff7d6;
+}
+
+@keyframes breathing {
+  0%,
+  100% {
+    background: linear-gradient(135deg, #2b7acc 0%, #409eff 100%);
+  }
+  50% {
+    background: linear-gradient(135deg, #66b1ff 0%, #b3d8ff 100%);
+  }
+}
+
+.breathing-button:not(.is-disabled):not(.is-loading) {
+  animation: breathing 2s ease-in-out infinite;
+  border: none;
 }
 </style>

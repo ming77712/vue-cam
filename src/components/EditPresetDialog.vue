@@ -8,18 +8,10 @@
     @close="handleClose"
   >
     <el-form ref="formRef" :model="form" label-width="100px">
-      <el-form-item
-        v-for="preset in form.presets"
-        :key="preset.id"
-        :label="preset.name"
-      >
+      <el-form-item v-for="preset in form.presets" :key="preset.id" :label="preset.name">
         <div class="flex items-center gap-2">
           <el-input v-model="preset.name" placeholder="預置點名稱" class="flex-1" />
-          <el-button
-            type="danger"
-            size="small"
-            @click="handleDeletePreset(preset.id)"
-          >
+          <el-button type="danger" size="small" @click="handleDeletePreset(preset.id)">
             刪除
           </el-button>
         </div>
@@ -36,9 +28,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import type { FormInstance } from 'element-plus'
 import type { CameraPreset } from '../types/camera'
+import { useDialogWidth } from '../composables'
 
 /**
  * 編輯預置點對話框組件
@@ -66,16 +59,8 @@ const form = reactive<{
 /**
  * 響應式對話框寬度
  */
-const dialogWidth = computed(() => {
-  if (typeof window !== 'undefined') {
-    if (window.innerWidth < 640) {
-      return '95%'
-    } else if (window.innerWidth < 768) {
-      return '90%'
-    }
-    return '500px'
-  }
-  return '500px'
+const dialogWidth = useDialogWidth({
+  large: '500px',
 })
 
 /**
@@ -132,5 +117,21 @@ function handleClose(): void {
 }
 </script>
 
-<style scoped></style>
+<style scoped>
+.breathing-btn {
+  animation: breathing 1.5s infinite alternate;
+}
 
+@keyframes breathing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 139, 255, 0.3);
+    background-color: #409eff;
+    color: #fff;
+  }
+  100% {
+    box-shadow: 0 0 18px 8px rgba(64, 158, 255, 0.25);
+    background-color: #66b1ff;
+    color: #fff;
+  }
+}
+</style>

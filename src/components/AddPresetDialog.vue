@@ -23,8 +23,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { useDialogWidth } from '../composables'
 
 /**
  * 新增預置點對話框組件
@@ -57,17 +58,7 @@ const rules: FormRules = {
 /**
  * 響應式對話框寬度
  */
-const dialogWidth = computed(() => {
-  if (typeof window !== 'undefined') {
-    if (window.innerWidth < 640) {
-      return '95%'
-    } else if (window.innerWidth < 768) {
-      return '90%'
-    }
-    return '400px'
-  }
-  return '400px'
-})
+const dialogWidth = useDialogWidth()
 
 /**
  * 處理表單提交

@@ -9,7 +9,16 @@
       >
         <template #title>
           <div class="flex w-full items-center justify-between pr-4">
-            <span class="font-semibold text-gray-800">{{ camera.name }}</span>
+            <div class="flex items-center gap-2">
+              <!-- 管理者可以選擇攝影機 -->
+              <el-checkbox
+                v-if="isAdmin"
+                :model-value="selectedCameraIds.has(camera.id)"
+                @update:model-value="(val: boolean) => handleSelectionChange(camera.id, val)"
+                @click.stop
+              />
+              <span class="font-semibold text-gray-800">{{ camera.name }}</span>
+            </div>
             <el-tag v-if="isDirty(camera.id)" type="warning" size="small">已修改</el-tag>
           </div>
         </template>
@@ -28,44 +37,34 @@
           <!-- 轉向時間 -->
           <div class="flex items-center justify-between border-b border-gray-200 pb-3">
             <span class="text-sm font-medium text-gray-700">轉向時間 (秒)</span>
-            <span class="text-sm text-gray-600">{{ camera.panTime }}</span>
+            <template v-if="editingPanTimeCameraId === camera.id">
+              <el-input
+                type="number"
+                size="small"
+                v-model.number="panTimeEditor.editingValue.value"
+                style="width: 80px; text-align: center"
+                autofocus
+                @blur="savePanTime(camera)"
+                @keyup.enter="savePanTime(camera)"
+                @keyup.esc="cancelPanTimeEdit()"
+                min="0"
+              />
+            </template>
+            <template v-else>
+              <span
+                class="text-sm text-blue-600 cursor-pointer"
+                style="text-align: center"
+                @click="startPanTimeEdit(camera)"
+              >
+                {{ camera.panTime }}
+              </span>
+            </template>
           </div>
 
           <!-- 預置點 -->
           <div class="border-b border-gray-200 pb-3">
-            <div class="mb-2 flex items-center justify-between">
+            <div class="mb-2">
               <span class="text-sm font-medium text-gray-700">預置點</span>
-              <div class="flex items-center gap-2">
-                <!-- 管理者可以新增/編輯預置點 -->
-                <div v-if="isAdmin" class="flex items-center gap-1">
-                  <el-button
-                    size="small"
-                    type="success"
-                    link
-                    @click="$emit('addPreset', camera)"
-                  >
-                    新增
-                  </el-button>
-                  <el-button
-                    size="small"
-                    type="primary"
-                    link
-                    @click="$emit('editPresets', camera)"
-                  >
-                    編輯
-                  </el-button>
-                </div>
-                <!-- 復原按鈕（與新增編輯按鈕區隔） -->
-                <el-button
-                  size="small"
-                  type="warning"
-                  link
-                  @click="$emit('resetPresets', camera.id)"
-                  :disabled="!isDirty(camera.id)"
-                >
-                  復原
-                </el-button>
-              </div>
             </div>
             <div class="flex flex-wrap gap-2">
               <div
@@ -76,7 +75,9 @@
                 <el-checkbox
                   :model-value="preset.checked"
                   :disabled="!isAuthenticated"
-                  @update:model-value="(val: boolean) => $emit('presetChange', camera.id, preset.id, val)"
+                  @update:model-value="
+                    (val: boolean) => $emit('presetChange', camera.id, preset.id, val)
+                  "
                 />
                 <span
                   class="cursor-pointer text-sm text-blue-600 hover:text-blue-800 hover:underline"
@@ -85,6 +86,27 @@
                   {{ preset.name }}
                 </span>
               </div>
+            </div>
+            <!-- 操作按鈕 -->
+            <div class="mt-2 flex items-center gap-2">
+              <el-button
+                v-if="isAdmin"
+                size="small"
+                type="primary"
+                link
+                @click="$emit('editPresets', camera)"
+              >
+                編輯
+              </el-button>
+              <el-button
+                size="small"
+                type="warning"
+                link
+                @click="$emit('resetPresets', camera.id)"
+                :disabled="!isDirty(camera.id)"
+              >
+                復原
+              </el-button>
             </div>
           </div>
         </div>
@@ -96,9 +118,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { CameraItem, CameraPreset } from '../types/camera'
+import { useEditableField } from '../composables'
 
 /**
- * 攝影機卡片列表組件（響應式）
+ * 攝影機卡片列表組件
  * 在小螢幕時以卡片摺疊方式顯示攝影機資料
  */
 
@@ -107,19 +130,51 @@ defineProps<{
   isAuthenticated: boolean
   isAdmin: boolean
   isDirty: (cameraId: number) => boolean
+  selectedCameraIds: Set<number>
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   pushEnabledChange: [cameraId: number, enabled: boolean]
   presetChange: [cameraId: number, presetId: number, checked: boolean]
   viewPreset: [cameraId: number, preset: CameraPreset]
   editPresets: [camera: CameraItem]
-  addPreset: [camera: CameraItem]
   resetPresets: [cameraId: number]
+  panTimeChange: [cameraId: number, value: number]
+  selectionChange: [cameraId: number, selected: boolean]
 }>()
 
 // 預設展開第一個項目
 const activeNames = ref<number[]>([])
+
+/**
+ * 處理攝影機選擇變更
+ */
+function handleSelectionChange(cameraId: number, selected: boolean): void {
+  emit('selectionChange', cameraId, selected)
+}
+
+// 行動版轉向時間編輯狀態
+const editingPanTimeCameraId = ref<number | null>(null)
+const panTimeEditor = useEditableField<number>((newValue) => {
+  if (editingPanTimeCameraId.value !== null) {
+    emit('panTimeChange', editingPanTimeCameraId.value, newValue)
+  }
+})
+
+function startPanTimeEdit(camera: CameraItem) {
+  editingPanTimeCameraId.value = camera.id
+  panTimeEditor.startEdit(camera.panTime)
+}
+
+function savePanTime(camera: CameraItem) {
+  panTimeEditor.save()
+  editingPanTimeCameraId.value = null
+}
+
+function cancelPanTimeEdit() {
+  panTimeEditor.cancel()
+  editingPanTimeCameraId.value = null
+}
 </script>
 
 <style scoped>
@@ -140,4 +195,3 @@ const activeNames = ref<number[]>([])
   border-radius: 0 0 8px 8px;
 }
 </style>
-
