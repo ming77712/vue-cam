@@ -366,9 +366,10 @@ const hasSelectedCameras = computed(() => selectedCameraIds.value.size > 0)
  */
 const hasChanges = computed(() => {
   // 檢查是否有任何攝影機的 checkbox, 轉向時間 或推播狀態有變更
-  const hasDirtyRows = cameras.value.some((camera) => isRowDirty(camera.id))
+  const hasDirtyRows = cameras.value.some((camera) => isRowDirty(camera.CameraId))
   // 檢查是否有圖片上傳
   const hasImageUploads = imageUploads.value.length > 0
+
   return hasDirtyRows || hasImageUploads
 })
 
