@@ -9,13 +9,17 @@
       </div>
     </div>
 
-    <!-- 篩選區與操作按鈕 -->
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <CameraFilters
-        v-model:search-keyword="searchKeyword"
-        v-model:push-filter="pushFilter"
-        :is-admin="authStore.isAdmin"
+    <!-- 搜尋與操作工具列 -->
+    <div class="flex flex-col gap-3 items-start">
+      <!-- 搜尋框 -->
+      <el-input
+        v-model="searchKeyword"
+        placeholder="搜尋攝影機 (名稱、編號、城市)"
+        clearable
+        class="!w-60"
       />
+
+      <!-- 操作按鈕群組 -->
       <div class="flex flex-wrap gap-2">
         <!-- 管理者可以新增/刪除攝影機 -->
         <template v-if="authStore.isAdmin">
@@ -54,64 +58,66 @@
         <!-- 選擇欄（僅管理者可見） -->
         <el-table-column v-if="authStore.isAdmin" type="selection" width="55" />
         <el-table-column
-          prop="name"
+          prop="CameraName"
           label="攝影機"
           sortable="custom"
           width="150"
           show-overflow-tooltip
         />
         <el-table-column
-          prop="pushEnabled"
-          label="是否推播"
+          prop="WantToBot"
+          label="推播"
           sortable="custom"
           width="110"
           align="center"
         >
           <template #default="{ row }">
             <el-switch
-              :model-value="row.pushEnabled"
+              :model-value="row.WantToBot"
               :disabled="!authStore.isAuthenticated"
-              @update:model-value="(val: boolean) => handlePushEnabledChange(row.id, val)"
+              @update:model-value="(val: boolean) => handlePushEnabledChange(row.CameraId, val)"
             />
           </template>
         </el-table-column>
-        <el-table-column label="轉向時間 (秒)" sortable="custom" width="140" align="center">
-          <template #default="{ row, $index: index }">
-              <template v-if="editingPanTimeIndex === index">
-              <el-input
-                type="number"
-                size="small"
-                v-model.number="panTimeEditor.editingValue.value"
-                style="width: 80px"
-                autofocus
-                @blur="savePanTime(row, index)"
-                @keyup.enter="savePanTime(row, index)"
-                @keyup.esc="cancelPanTimeEdit()"
-                min="0"
+        <el-table-column label="輪巡" sortable="custom" width="110" align="center">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.IsSpin"
+              :disabled="!authStore.isAuthenticated"
+              @update:model-value="(val: boolean) => handleIsSpinChange(row.CameraId, val)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="鎖定視角" width="160" align="center">
+          <template #default="{ row }">
+            <el-select
+              :model-value="row.IsLock ? row.CurrentPointId : null"
+              placeholder="未鎖定"
+              clearable
+              :disabled="!authStore.isAuthenticated"
+              @change="(val: number | undefined) => handleLockViewChange(row.CameraId, val)"
+              @clear="() => handleLockViewChange(row.CameraId, undefined)"
+            >
+               <el-option
+                v-for="point in row.CameraPoints"
+                :key="point.CameraPointId"
+                :label="point.CameraPointName"
+                :value="point.CameraPointId"
               />
-            </template>
-            <template v-else>
-              <span
-                class="editable-cell cursor-pointer"
-                style="color: #409eff"
-                @click="startPanTimeEdit(row, index)"
-              >
-                {{ row.panTime }}
-              </span>
-            </template>
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="預置點" min-width="320">
           <template #default="{ row }">
             <PresetCell
-              :presets="row.presets"
+              :presets="row.CameraPoints"
               :is-authenticated="authStore.isAuthenticated"
               :is-admin="authStore.isAdmin"
-              :is-dirty="isRowDirty(row.id)"
-              @preset-change="(presetId, checked) => handlePresetChange(row.id, presetId, checked)"
-              @view-preset="(preset) => handleViewPreset(row.id, preset)"
+              :is-dirty="isRowDirty(row.CameraId)"
+              @preset-change="(presetId, checked) => handlePresetChange(row.CameraId, presetId, checked)"
+              @view-preset="(preset) => handleViewPreset(row.CameraId, preset)"
               @edit-presets="() => handleEditPresets(row)"
-              @reset-presets="() => resetPresets(row.id)"
+              @reset-presets="() => resetPresets(row.CameraId)"
             />
           </template>
         </el-table-column>
@@ -132,7 +138,8 @@
         @view-preset="(cameraId, preset) => handleViewPreset(cameraId, preset)"
         @edit-presets="handleEditPresets"
         @reset-presets="resetPresets"
-        @pan-time-change="handlePanTimeChangeMobile"
+        @is-spin-change="handleIsSpinChange"
+        @lock-view-change="handleLockViewChange"
         @selection-change="handleMobileSelectionChange"
       />
     </div>
@@ -172,8 +179,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import type { SortOrder } from '../types/camera'
-import type { CameraItem, CameraPreset } from '../types/camera'
-import CameraFilters from '../components/CameraFilters.vue'
+import type { CameraItem, CameraPoint } from '../types/camera'
 import PresetCell from '../components/PresetCell.vue'
 import CameraCardList from '../components/CameraCardList.vue'
 import EditPresetDialog from '../components/EditPresetDialog.vue'
@@ -187,36 +193,65 @@ const authStore = useAuthStore()
 
 const cameras = ref<CameraItem[]>([
   {
-    id: 1,
-    name: '大門口一號',
-    pushEnabled: true,
-    panTime: 3,
-    presets: [
-      { id: 1, name: '預置點1', checked: true },
-      { id: 2, name: '預置點2', checked: false },
-      { id: 3, name: '預置點3', checked: false },
-    ],
-  },
-  {
-    id: 2,
-    name: '倉庫後門',
-    pushEnabled: false,
-    panTime: 5,
-    presets: [
-      { id: 1, name: '預置點1', checked: false },
-      { id: 2, name: '預置點2', checked: true },
-      { id: 3, name: '預置點3', checked: false },
-    ],
-  },
-  {
-    id: 3,
-    name: '停車場北區',
-    pushEnabled: true,
-    panTime: 4,
-    presets: [
-      { id: 1, name: '預置點1', checked: false },
-      { id: 2, name: '預置點2', checked: false },
-      { id: 3, name: '預置點3', checked: true },
+    CityId: 630000,
+    City: '臺北市',
+    DocGuid: '000-0000-00000',
+    CameraId: 1,
+    CameraNo: 'CAM_01',
+    CameraName: '大門口一號',
+    IsSpin: true,
+    WantToBot: true,
+    IsLock: false,
+    HLSUrl: 'URL',
+    CurrentPointId: 1,
+    CurrentPointDateTime: '2026/01/08 14:15',
+    CameraPoints: [
+      {
+        CameraPointId: 123,
+        DocGuid: '000-0000-00000',
+        CameraPointNo: 1,
+        CameraPointName: '中油',
+        CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
+        CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
+        IsSpinToTarget: true,
+        ChangePointSec: 10,
+        Schedule: [
+          {
+            StartTime: '09:30:00.000',
+            EndTime: '09:35:00.000',
+            IsEnabled: true,
+          },
+          {
+            StartTime: '10:30:00.000',
+            EndTime: '10:35:00.000',
+            IsEnabled: true,
+          },
+        ],
+        Checked: true,
+      },
+      {
+        CameraPointId: 155,
+        DocGuid: '000-0000-00000',
+        CameraPointNo: 2,
+        CameraPointName: '中石化',
+        CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
+        CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
+        IsSpinToTarget: true,
+        ChangePointSec: 30,
+        Schedule: [
+          {
+            StartTime: '09:30:00.000',
+            EndTime: '09:35:00.000',
+            IsEnabled: true,
+          },
+          {
+            StartTime: '10:30:00.000',
+            EndTime: '10:35:00.000',
+            IsEnabled: true,
+          },
+        ],
+        Checked: false,
+      },
     ],
   },
 ])
@@ -224,7 +259,6 @@ const cameras = ref<CameraItem[]>([
 const originalCameras = ref<CameraItem[]>(JSON.parse(JSON.stringify(cameras.value)) as CameraItem[])
 
 const searchKeyword = ref('')
-const pushFilter = ref<boolean | null>(null)
 
 const sortState = reactive<{
   prop: keyof CameraItem | null
@@ -243,7 +277,7 @@ const showPresetViewDialog = ref(false)
 
 const editPresetForm = reactive<{
   cameraId: number
-  presets: CameraPreset[]
+  presets: CameraPoint[]
 }>({
   cameraId: 0,
   presets: [],
@@ -270,41 +304,6 @@ const imageUploads = ref<
 // 響應式狀態
 const { isMobile } = useResponsive()
 
-// 轉向時間編輯狀態（桌面版）
-const editingPanTimeIndex = ref<number | null>(null)
-const panTimeEditor = useEditableField<number>((newValue) => {
-  if (editingPanTimeIndex.value !== null) {
-    const camera = pagedCameras.value[editingPanTimeIndex.value]
-    if (camera) {
-      camera.panTime = newValue
-      cameras.value = [...cameras.value]
-    }
-  }
-})
-
-function startPanTimeEdit(row: CameraItem, index: number) {
-  editingPanTimeIndex.value = index
-  panTimeEditor.startEdit(row.panTime)
-}
-
-function savePanTime(row: CameraItem, index: number) {
-  panTimeEditor.save()
-  editingPanTimeIndex.value = null
-}
-
-function cancelPanTimeEdit() {
-  panTimeEditor.cancel()
-  editingPanTimeIndex.value = null
-}
-
-function handlePanTimeChangeMobile(cameraId: number, value: number) {
-  const camera = cameras.value.find((c) => c.id === cameraId)
-  if (camera) {
-    camera.panTime = value
-    cameras.value = [...cameras.value]
-  }
-}
-
 /**
  * 過濾並排序攝影機列表
  * @returns 過濾和排序後的攝影機陣列
@@ -314,11 +313,20 @@ const filteredCameras = computed(() => {
 
   if (searchKeyword.value.trim()) {
     const keyword = searchKeyword.value.trim().toLowerCase()
-    result = result.filter((item) => item.name.toLowerCase().includes(keyword))
-  }
+    result = result.filter((item) => {
+      // 搜尋：城市、編號、攝影機名稱
+      const basicMatch =
+        item.City?.toLowerCase().includes(keyword) ||
+        item.CameraNo?.toLowerCase().includes(keyword) ||
+        item.CameraName?.toLowerCase().includes(keyword)
 
-  if (pushFilter.value !== null) {
-    result = result.filter((item) => item.pushEnabled === pushFilter.value)
+      // 搜尋：預置點名稱
+      const pointMatch = item.CameraPoints.some((p) =>
+        p.CameraPointName?.toLowerCase().includes(keyword),
+      )
+
+      return basicMatch || pointMatch
+    })
   }
 
   if (sortState.prop && sortState.order) {
@@ -370,33 +378,58 @@ const hasChanges = computed(() => {
  * @returns 若有變更則返回 true，否則返回 false
  */
 function isRowDirty(cameraId: number): boolean {
-  const current = cameras.value.find((c) => c.id === cameraId)
-  const original = originalCameras.value.find((c) => c.id === cameraId)
+  const current = cameras.value.find((c) => c.CameraId === cameraId)
+  const original = originalCameras.value.find((c) => c.CameraId === cameraId)
   if (!current || !original) return false
 
   // 檢查推播狀態
-  if (current.pushEnabled !== original.pushEnabled) return true
+  if (current.WantToBot !== original.WantToBot) return true
 
-  // 檢查轉向時間
-  if (current.panTime !== original.panTime) return true
+  // 檢查是否輪巡
+  if (current.IsSpin !== original.IsSpin) return true
+
+  // 檢查鎖定視角
+  if (current.IsLock !== original.IsLock) return true
+  if (current.CurrentPointId !== original.CurrentPointId) return true
 
   // 檢查預置點數量是否改變（新增或刪除）
-  if (current.presets.length !== original.presets.length) return true
+  if (current.CameraPoints.length !== original.CameraPoints.length) return true
 
-  // 檢查預置點的 checkbox 狀態和名稱
-  const originalPresetMap = new Map(original.presets.map((p) => [p.id, p]))
+  // 檢查預置點的 checkbox 狀態、名稱和轉向時間
+  const originalPresetMap = new Map(original.CameraPoints.map((p) => [p.CameraPointId, p]))
 
-  for (const preset of current.presets) {
-    const originalPreset = originalPresetMap.get(preset.id)
+  for (const preset of current.CameraPoints) {
+    const originalPreset = originalPresetMap.get(preset.CameraPointId)
 
     // 新增的預置點（原始資料中沒有此 ID）
     if (!originalPreset) return true
 
     // 檢查 checkbox 狀態
-    if (originalPreset.checked !== preset.checked) return true
+    if (originalPreset.Checked !== preset.Checked) return true
 
     // 檢查名稱是否改變
-    if (originalPreset.name !== preset.name) return true
+    if (originalPreset.CameraPointName !== preset.CameraPointName) return true
+
+    // 檢查轉向時間是否改變
+    if (originalPreset.ChangePointSec !== preset.ChangePointSec) return true
+
+    // 檢查排程是否改變
+    const originalSchedule = originalPreset.Schedule || []
+    const currentSchedule = preset.Schedule || []
+
+    if (originalSchedule.length !== currentSchedule.length) return true
+
+    for (let i = 0; i < originalSchedule.length; i++) {
+      const oSched = originalSchedule[i]
+      const cSched = currentSchedule[i]
+      if (
+        oSched.StartTime !== cSched.StartTime ||
+        oSched.EndTime !== cSched.EndTime ||
+        oSched.IsEnabled !== cSched.IsEnabled
+      ) {
+        return true
+      }
+    }
   }
 
   return false
@@ -408,7 +441,7 @@ function isRowDirty(cameraId: number): boolean {
  * @returns 若該列有變更則返回 'camera-row--dirty'，否則返回空字串
  */
 function rowClassName({ row }: { row: CameraItem }): string {
-  return isRowDirty(row.id) ? 'camera-row--dirty' : ''
+  return isRowDirty(row.CameraId) ? 'camera-row--dirty' : ''
 }
 
 /**
@@ -439,7 +472,7 @@ function onPageChange(page: number): void {
  * @param selection - 選中的攝影機列表
  */
 function handleSelectionChange(selection: CameraItem[]): void {
-  selectedCameraIds.value = new Set(selection.map((camera) => camera.id))
+  selectedCameraIds.value = new Set(selection.map((camera) => camera.CameraId))
 }
 
 /**
@@ -470,9 +503,47 @@ function handleLogout(): void {
  * @param enabled - 是否推播
  */
 function handlePushEnabledChange(cameraId: number, enabled: boolean): void {
-  const camera = cameras.value.find((c) => c.id === cameraId)
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
   if (camera) {
-    camera.pushEnabled = enabled
+    camera.WantToBot = enabled
+    // 觸發響應式更新
+    cameras.value = [...cameras.value]
+  }
+}
+
+/**
+ * 處理是否輪巡狀態變更
+ * @param cameraId - 攝影機 ID
+ * @param isSpin - 是否輪巡
+ */
+function handleIsSpinChange(cameraId: number, isSpin: boolean): void {
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
+  if (camera) {
+    camera.IsSpin = isSpin
+    // 觸發響應式更新
+    cameras.value = [...cameras.value]
+  }
+}
+
+/**
+ * 處理鎖定視角變更
+ * @param cameraId - 攝影機 ID
+ * @param presetId - 預置點 ID (若為 undefined 代表解鎖)
+ */
+function handleLockViewChange(cameraId: number, presetId: number | undefined): void {
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
+  if (camera) {
+    if (presetId) {
+      // 鎖定指定預置點
+      camera.IsLock = true
+      camera.CurrentPointId = presetId
+    } else {
+      // 解鎖
+      camera.IsLock = false
+      // 保持 CurrentPointId 不變或清空都可，這裡選擇保持以便之後若是切換回鎖定能有預設值，
+      // 但根據需求描述 "鎖定視角是可以選擇當前該攝影機有的預置點作為選項"，
+      // 這裡選擇: 如果解鎖，CurrentPointId 不變，只是 IsLock 變 false
+    }
     // 觸發響應式更新
     cameras.value = [...cameras.value]
   }
@@ -485,11 +556,11 @@ function handlePushEnabledChange(cameraId: number, enabled: boolean): void {
  * @param checked - 是否勾選
  */
 function handlePresetChange(cameraId: number, presetId: number, checked: boolean): void {
-  const camera = cameras.value.find((c) => c.id === cameraId)
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
   if (camera) {
-    const preset = camera.presets.find((p) => p.id === presetId)
+    const preset = camera.CameraPoints.find((p) => p.CameraPointId === presetId)
     if (preset) {
-      preset.checked = checked
+      preset.Checked = checked
       // 觸發響應式更新
       cameras.value = [...cameras.value]
     }
@@ -507,13 +578,21 @@ function handleAddCamera(): void {
     inputErrorMessage: '請輸入攝影機名稱',
   })
     .then(({ value }) => {
-      const newCameraId = Math.max(...cameras.value.map((c) => c.id), 0) + 1
+      const newCameraId = Math.max(...cameras.value.map((c) => c.CameraId), 0) + 1
       const newCamera: CameraItem = {
-        id: newCameraId,
-        name: value,
-        pushEnabled: false,
-        panTime: 3,
-        presets: [],
+        CityId: 630000,
+        City: '臺北市',
+        DocGuid: '000-0000-00000',
+        CameraId: newCameraId,
+        CameraNo: `CAM_${newCameraId}`,
+        CameraName: value,
+        IsSpin: false,
+        WantToBot: false,
+        IsLock: false,
+        HLSUrl: '',
+        CurrentPointId: null,
+        CurrentPointDateTime: null,
+        CameraPoints: [],
       }
       cameras.value.push(newCamera)
       originalCameras.value.push(JSON.parse(JSON.stringify(newCamera)) as CameraItem)
@@ -534,8 +613,8 @@ function handleDeleteCamera(): void {
   }
 
   const cameraNames = cameras.value
-    .filter((c) => selectedCameraIds.value.has(c.id))
-    .map((c) => c.name)
+    .filter((c) => selectedCameraIds.value.has(c.CameraId))
+    .map((c) => c.CameraName)
     .join('、')
 
   ElMessageBox.confirm(`確定要刪除以下攝影機嗎？\n${cameraNames}`, '刪除攝影機', {
@@ -544,9 +623,9 @@ function handleDeleteCamera(): void {
     type: 'warning',
   })
     .then(() => {
-      cameras.value = cameras.value.filter((c) => !selectedCameraIds.value.has(c.id))
+      cameras.value = cameras.value.filter((c) => !selectedCameraIds.value.has(c.CameraId))
       originalCameras.value = originalCameras.value.filter(
-        (c) => !selectedCameraIds.value.has(c.id),
+        (c) => !selectedCameraIds.value.has(c.CameraId),
       )
       selectedCameraIds.value.clear()
       ElMessage.success('刪除成功')
@@ -561,8 +640,8 @@ function handleDeleteCamera(): void {
  * @param row - 攝影機資料
  */
 function handleEditPresets(row: CameraItem): void {
-  editPresetForm.cameraId = row.id
-  editPresetForm.presets = JSON.parse(JSON.stringify(row.presets)) as CameraPreset[]
+  editPresetForm.cameraId = row.CameraId
+  editPresetForm.presets = JSON.parse(JSON.stringify(row.CameraPoints)) as CameraPoint[]
   showEditPresetDialog.value = true
 }
 
@@ -571,10 +650,10 @@ function handleEditPresets(row: CameraItem): void {
  * @param cameraId - 攝影機 ID
  * @param presets - 預置點列表
  */
-function handleSaveEditPresets(cameraId: number, presets: CameraPreset[]): void {
-  const camera = cameras.value.find((c) => c.id === cameraId)
+function handleSaveEditPresets(cameraId: number, presets: CameraPoint[]): void {
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
   if (camera) {
-    camera.presets = JSON.parse(JSON.stringify(presets)) as CameraPreset[]
+    camera.CameraPoints = JSON.parse(JSON.stringify(presets)) as CameraPoint[]
     // 不更新 originalCameras，讓預置點的新增/刪除/修改被視為變更
     // 這樣 isDirty 會檢測到變更，使用者需要點擊「儲存變更」才會真正保存
   }
@@ -585,13 +664,15 @@ function handleSaveEditPresets(cameraId: number, presets: CameraPreset[]): void 
  * @param cameraId - 攝影機 ID
  */
 function resetPresets(cameraId: number): void {
-  const current = cameras.value.find((c) => c.id === cameraId)
-  const original = originalCameras.value.find((c) => c.id === cameraId)
+  const current = cameras.value.find((c) => c.CameraId === cameraId)
+  const original = originalCameras.value.find((c) => c.CameraId === cameraId)
   if (!current || !original) return
 
-  current.pushEnabled = original.pushEnabled
-  current.presets = original.presets.map((p) => ({ ...p }))
-  current.panTime = original.panTime
+  current.WantToBot = original.WantToBot
+  current.IsSpin = original.IsSpin
+  current.IsLock = original.IsLock
+  current.CurrentPointId = original.CurrentPointId
+  current.CameraPoints = original.CameraPoints.map((p) => ({ ...p }))
 }
 
 /**
@@ -599,15 +680,18 @@ function resetPresets(cameraId: number): void {
  * @param cameraId - 攝影機 ID
  * @param preset - 預置點資料
  */
-function handleViewPreset(cameraId: number, preset: CameraPreset): void {
-  const camera = cameras.value.find((c) => c.id === cameraId)
+function handleViewPreset(cameraId: number, preset: CameraPoint): void {
+  const camera = cameras.value.find((c) => c.CameraId === cameraId)
   if (!camera) return
 
   currentPresetView.value = {
     cameraId,
-    cameraName: camera.name,
-    presetId: preset.id,
-    presetName: preset.name,
+    cameraName: camera.CameraName,
+    presetId: preset.CameraPointId,
+    presetName: preset.CameraPointName,
+    hlsUrl: camera.HLSUrl,
+    viewImage: preset.CameraPointScenePic, // 假設視角圖
+    locationImage: preset.CameraPointAreaPic, // 假設可視圖
     // 實際應用中可以從 API 取得：
     // viewImage: `/api/cameras/${cameraId}/presets/${preset.id}/view`,
     // locationImage: `/api/cameras/${cameraId}/presets/${preset.id}/location`,
@@ -657,37 +741,33 @@ async function handleSave(): Promise<void> {
 
   try {
     // 收集所有變更的資料
-    const changes: Array<{
-      cameraId: number
-      pushEnabled: boolean
-      presets: Array<{ presetId: number; checked: boolean }>
-    }> = []
+    const changes: Array<any> = []
 
     // 找出所有有變更的攝影機
+    // 找出所有有變更的攝影機
     cameras.value.forEach((camera) => {
-      if (isRowDirty(camera.id)) {
-        const original = originalCameras.value.find((c) => c.id === camera.id)
-        if (original) {
-          // 收集 checkbox 變更
-          const presetChanges: Array<{ presetId: number; checked: boolean }> = []
-          const originalPresetMap = new Map(original.presets.map((p) => [p.id, p.checked]))
+      if (isRowDirty(camera.CameraId)) {
+        // 為了確保資料完整性，送出該攝影機的所有主要設定
+        // 實際專案中可能只需要送出變更欄位，這裡簡化為送出完整狀態或特定結構
 
-          camera.presets.forEach((preset) => {
-            const originalChecked = originalPresetMap.get(preset.id)
-            if (originalChecked !== undefined && originalChecked !== preset.checked) {
-              presetChanges.push({
-                presetId: preset.id,
-                checked: preset.checked,
-              })
-            }
-          })
+        // 收集所有預置點資料 (包含排程)
+        const presetsData = camera.CameraPoints.map(p => ({
+          CameraPointId: p.CameraPointId,
+          CameraPointName: p.CameraPointName,
+          Checked: !!p.Checked,
+          ChangePointSec: p.ChangePointSec,
+          IsSpinToTarget: p.IsSpinToTarget,
+          Schedule: p.Schedule
+        }))
 
-          changes.push({
-            cameraId: camera.id,
-            pushEnabled: camera.pushEnabled,
-            presets: presetChanges,
-          })
-        }
+        changes.push({
+          cameraId: camera.CameraId,
+          pushEnabled: camera.WantToBot,
+          isSpin: camera.IsSpin,
+          isLock: camera.IsLock,
+          currentPointId: camera.CurrentPointId,
+          presets: presetsData
+        })
       }
     })
 

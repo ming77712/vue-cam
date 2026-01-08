@@ -3,9 +3,9 @@
     <el-collapse v-model="activeNames" class="camera-collapse">
       <el-collapse-item
         v-for="camera in cameras"
-        :key="camera.id"
-        :name="camera.id"
-        :class="{ 'camera-card--dirty': isDirty(camera.id) }"
+        :key="camera.CameraId"
+        :name="camera.CameraId"
+        :class="{ 'camera-card--dirty': isDirty(camera.CameraId) }"
       >
         <template #title>
           <div class="flex w-full items-center justify-between pr-4">
@@ -13,52 +13,57 @@
               <!-- 管理者可以選擇攝影機 -->
               <el-checkbox
                 v-if="isAdmin"
-                :model-value="selectedCameraIds.has(camera.id)"
-                @update:model-value="(val: boolean) => handleSelectionChange(camera.id, val)"
+                :model-value="selectedCameraIds.has(camera.CameraId)"
+                @update:model-value="(val: boolean) => handleSelectionChange(camera.CameraId, val)"
                 @click.stop
               />
-              <span class="font-semibold text-gray-800">{{ camera.name }}</span>
+              <span class="font-semibold text-gray-800">{{ camera.CameraName }}</span>
             </div>
-            <el-tag v-if="isDirty(camera.id)" type="warning" size="small">已修改</el-tag>
+            <el-tag v-if="isDirty(camera.CameraId)" type="warning" size="small">已修改</el-tag>
           </div>
         </template>
 
         <div class="space-y-3 p-4">
-          <!-- 是否推播 -->
+          <!-- 推播 -->
           <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-            <span class="text-sm font-medium text-gray-700">是否推播</span>
+            <span class="text-sm font-medium text-gray-700">推播</span>
             <el-switch
-              :model-value="camera.pushEnabled"
+              :model-value="camera.WantToBot"
               :disabled="!isAuthenticated"
-              @update:model-value="(val: boolean) => $emit('pushEnabledChange', camera.id, val)"
+              @update:model-value="(val: boolean) => $emit('pushEnabledChange', camera.CameraId, val)"
             />
           </div>
 
-          <!-- 轉向時間 -->
+          <!-- 輪巡 -->
           <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-            <span class="text-sm font-medium text-gray-700">轉向時間 (秒)</span>
-            <template v-if="editingPanTimeCameraId === camera.id">
-              <el-input
-                type="number"
-                size="small"
-                v-model.number="panTimeEditor.editingValue.value"
-                style="width: 80px; text-align: center"
-                autofocus
-                @blur="savePanTime(camera)"
-                @keyup.enter="savePanTime(camera)"
-                @keyup.esc="cancelPanTimeEdit()"
-                min="0"
+            <span class="text-sm font-medium text-gray-700">輪巡</span>
+            <el-switch
+              :model-value="camera.IsSpin"
+              :disabled="!isAuthenticated"
+              @update:model-value="(val: boolean) => $emit('isSpinChange', camera.CameraId, val)"
+            />
+          </div>
+
+          <!-- 鎖定視角 -->
+          <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+            <span class="text-sm font-medium text-gray-700 whitespace-nowrap min-w-[5rem]">鎖定視角</span>
+            <el-select
+              :model-value="camera.IsLock ? camera.CurrentPointId : null"
+              placeholder="未鎖定"
+              clearable
+              :disabled="!isAuthenticated"
+              size="small"
+              class="flex-1 w-full max-w-[12rem]"
+              @change="(val: number | undefined) => $emit('lockViewChange', camera.CameraId, val)"
+              @clear="() => $emit('lockViewChange', camera.CameraId, undefined)"
+            >
+              <el-option
+                v-for="point in camera.CameraPoints"
+                :key="point.CameraPointId"
+                :label="point.CameraPointName"
+                :value="point.CameraPointId"
               />
-            </template>
-            <template v-else>
-              <span
-                class="text-sm text-blue-600 cursor-pointer"
-                style="text-align: center"
-                @click="startPanTimeEdit(camera)"
-              >
-                {{ camera.panTime }}
-              </span>
-            </template>
+            </el-select>
           </div>
 
           <!-- 預置點 -->
@@ -68,22 +73,22 @@
             </div>
             <div class="flex flex-wrap gap-2">
               <div
-                v-for="preset in camera.presets"
-                :key="preset.id"
+                v-for="preset in camera.CameraPoints"
+                :key="preset.CameraPointId"
                 class="flex items-center gap-1"
               >
                 <el-checkbox
-                  :model-value="preset.checked"
+                  :model-value="preset.Checked"
                   :disabled="!isAuthenticated"
                   @update:model-value="
-                    (val: boolean) => $emit('presetChange', camera.id, preset.id, val)
+                    (val: boolean) => $emit('presetChange', camera.CameraId, preset.CameraPointId, val)
                   "
                 />
                 <span
                   class="cursor-pointer text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                  @click="$emit('viewPreset', camera.id, preset)"
+                  @click="$emit('viewPreset', camera.CameraId, preset)"
                 >
-                  {{ preset.name }}
+                  {{ preset.CameraPointName }}
                 </span>
               </div>
             </div>
@@ -102,8 +107,8 @@
                 size="small"
                 type="warning"
                 link
-                @click="$emit('resetPresets', camera.id)"
-                :disabled="!isDirty(camera.id)"
+                @click="$emit('resetPresets', camera.CameraId)"
+                :disabled="!isDirty(camera.CameraId)"
               >
                 復原
               </el-button>
@@ -117,7 +122,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { CameraItem, CameraPreset } from '../types/camera'
+import type { CameraItem, CameraPoint } from '../types/camera'
 import { useEditableField } from '../composables'
 
 /**
@@ -136,10 +141,11 @@ defineProps<{
 const emit = defineEmits<{
   pushEnabledChange: [cameraId: number, enabled: boolean]
   presetChange: [cameraId: number, presetId: number, checked: boolean]
-  viewPreset: [cameraId: number, preset: CameraPreset]
+  viewPreset: [cameraId: number, preset: CameraPoint]
   editPresets: [camera: CameraItem]
   resetPresets: [cameraId: number]
-  panTimeChange: [cameraId: number, value: number]
+  isSpinChange: [cameraId: number, isSpin: boolean]
+  lockViewChange: [cameraId: number, presetId: number | undefined]
   selectionChange: [cameraId: number, selected: boolean]
 }>()
 
@@ -151,29 +157,6 @@ const activeNames = ref<number[]>([])
  */
 function handleSelectionChange(cameraId: number, selected: boolean): void {
   emit('selectionChange', cameraId, selected)
-}
-
-// 行動版轉向時間編輯狀態
-const editingPanTimeCameraId = ref<number | null>(null)
-const panTimeEditor = useEditableField<number>((newValue) => {
-  if (editingPanTimeCameraId.value !== null) {
-    emit('panTimeChange', editingPanTimeCameraId.value, newValue)
-  }
-})
-
-function startPanTimeEdit(camera: CameraItem) {
-  editingPanTimeCameraId.value = camera.id
-  panTimeEditor.startEdit(camera.panTime)
-}
-
-function savePanTime(camera: CameraItem) {
-  panTimeEditor.save()
-  editingPanTimeCameraId.value = null
-}
-
-function cancelPanTimeEdit() {
-  panTimeEditor.cancel()
-  editingPanTimeCameraId.value = null
 }
 </script>
 

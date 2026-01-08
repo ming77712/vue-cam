@@ -1,0 +1,91 @@
+# 攝影機介面重構實作計劃
+
+## 概述
+
+重構攝影機管理介面以符合新的 API 資料結構。主要變更包括：
+- 將轉向時間（`ChangePointSec`）從攝影機層級移至預置點層級
+- 在攝影機層級新增 `IsSpin`（是否輪巡）和 `IsLock`（鎖定視角）切換開關
+- 在預置點對話框中顯示 HLS URL（當有值時）
+- 預置點沒有轉向時間值時顯示「-」
+
+## 建議變更
+
+### 型別定義
+
+#### [修改] [camera.ts](file:///d:/vue-cam/src/types/camera.ts)
+
+更新介面以符合新的 API 結構：
+- 在 [CameraPreset](file:///d:/vue-cam/src/types/camera.ts#4-9) 新增 `changePointSec`、`isSpinToTarget`、`schedule` 欄位
+- 在 [CameraItem](file:///d:/vue-cam/src/types/camera.ts#13-20) 新增 `isSpin`、`wantToBot`、`isLock`、`hlsUrl`、`currentPointId`、`currentPointDateTime` 欄位
+- 從 [CameraItem](file:///d:/vue-cam/src/types/camera.ts#13-20) 移除 `panTime`（已移至預置點層級）
+
+---
+
+### 桌面版視圖
+
+#### [修改] [CameraTableView.vue](file:///d:/vue-cam/src/views/CameraTableView.vue)
+
+**變更內容：**
+1. 從表格中移除「轉向時間」欄位（第 78-103 行）
+2. 新增「是否輪巡」(IsSpin) 欄位，使用開關控制
+3. 新增「鎖定視角」(IsLock) 欄位，使用開關控制
+4. 更新模擬資料以包含新欄位
+5. 移除轉向時間編輯邏輯
+6. 更新變更檢查以包含新欄位
+
+---
+
+### 行動版視圖
+
+#### [修改] [CameraCardList.vue](file:///d:/vue-cam/src/components/CameraCardList.vue)
+
+**變更內容：**
+1. 移除「轉向時間」區塊（第 37-62 行）
+2. 新增「是否輪巡」切換開關
+3. 新增「鎖定視角」切換開關
+4. 移除轉向時間編輯邏輯
+
+---
+
+### 預置點對話框
+
+#### [修改] [EditPresetDialog.vue](file:///d:/vue-cam/src/components/EditPresetDialog.vue)
+
+**變更內容：**
+1. 為每個預置點新增「轉向時間 (秒)」輸入欄位
+2. 當 `changePointSec` 為 null/undefined 時顯示「-」
+3. 新增 HLS URL 顯示/嵌入區塊
+4. 更新表單以處理新的預置點欄位
+
+---
+
+### 預置點視角對話框
+
+#### [修改] [PresetViewDialog.vue](file:///d:/vue-cam/src/components/PresetViewDialog.vue)
+
+**變更內容：**
+1. 當 HLS URL 有值時新增影片播放器
+2. 在對話框中顯示攝影機的 HLS 串流
+
+## 驗證計劃
+
+### 手動驗證
+
+1. **桌面版視圖：**
+   - 驗證「是否輪巡」和「鎖定視角」切換開關正常顯示和運作
+   - 驗證「轉向時間」欄位已移除
+   - 驗證預置點編輯包含轉向時間欄位
+
+2. **行動版視圖：**
+   - 驗證攝影機層級的切換開關正確顯示
+   - 驗證轉向時間已從攝影機卡片中移除
+   - 驗證預置點對話框顯示轉向時間
+
+3. **預置點對話框：**
+   - 驗證每個預置點都顯示轉向時間輸入欄位
+   - 驗證有 HLS URL 時正確顯示
+   - 驗證沒有設定轉向時間時顯示「-」
+
+4. **資料完整性：**
+   - 驗證所有變更都正確追蹤
+   - 驗證儲存功能包含新欄位

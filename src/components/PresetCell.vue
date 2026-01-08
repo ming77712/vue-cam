@@ -10,15 +10,15 @@
       >
         <template v-if="getPresetByIndex(index)">
           <el-checkbox
-            :model-value="getPresetByIndex(index)!.checked"
+            :model-value="getPresetByIndex(index)!.Checked"
             :disabled="!isAuthenticated"
-            @update:model-value="(val: boolean) => handlePresetChange(getPresetByIndex(index)!.id, val)"
+            @update:model-value="(val: boolean) => handlePresetChange(getPresetByIndex(index)!.CameraPointId, val)"
           />
           <span
             class="preset-name cursor-pointer text-blue-600 hover:text-blue-800 hover:underline"
             @click="$emit('viewPreset', getPresetByIndex(index)!)"
           >
-            {{ getPresetByIndex(index)!.name }}
+            {{ getPresetByIndex(index)!.CameraPointName }}
           </span>
         </template>
         <template v-else>
@@ -30,10 +30,10 @@
 
     <!-- 操作按鈕 -->
     <div class="preset-actions">
-      <el-button v-if="isAdmin" size="small" type="primary" link @click="$emit('editPresets')">
+      <el-button v-if="isAdmin" size="small" type="success" link @click="$emit('editPresets')">
         編輯
       </el-button>
-      <el-button size="small" type="warning" link @click="$emit('resetPresets')" :disabled="!isDirty">
+      <el-button size="small" type="danger" link @click="$emit('resetPresets')" :disabled="!isDirty">
         復原
       </el-button>
     </div>
@@ -42,7 +42,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CameraPreset } from '../types/camera'
+import type { CameraPoint } from '../types/camera'
 
 /**
  * 預置點欄位組件
@@ -50,7 +50,7 @@ import type { CameraPreset } from '../types/camera'
  */
 
 const props = defineProps<{
-  presets: CameraPreset[]
+  presets: CameraPoint[]
   isAuthenticated: boolean
   isAdmin: boolean
   isDirty: boolean
@@ -59,7 +59,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   presetChange: [presetId: number, checked: boolean]
-  viewPreset: [preset: CameraPreset]
+  viewPreset: [preset: CameraPoint]
   editPresets: []
   resetPresets: []
 }>()
@@ -73,7 +73,7 @@ const maxPresets = computed(() => props.maxPresets || 15)
  * 根據索引取得預置點
  * @param index - 索引（1-based）
  */
-function getPresetByIndex(index: number): CameraPreset | undefined {
+function getPresetByIndex(index: number): CameraPoint | undefined {
   return props.presets[index - 1]
 }
 

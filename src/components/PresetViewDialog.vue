@@ -64,6 +64,21 @@
           </div>
         </div>
       </div>
+
+      <!-- HLS 影像串流 -->
+      <div v-if="presetView.hlsUrl" class="mt-4">
+        <h4 class="mb-2 text-sm font-medium text-gray-700">即時影像</h4>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <video
+            :src="presetView.hlsUrl"
+            controls
+            class="w-full rounded"
+            style="max-height: 400px"
+          >
+            您的瀏覽器不支援影片播放。
+          </video>
+        </div>
+      </div>
     </div>
     <template #footer>
       <el-button @click="$emit('update:visible', false)">關閉</el-button>
@@ -89,6 +104,7 @@ export interface PresetViewData {
   presetName: string
   viewImage?: string
   locationImage?: string
+  hlsUrl?: string | null // HLS 影像串流 URL
 }
 
 const props = defineProps<{
