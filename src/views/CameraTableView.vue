@@ -1,26 +1,42 @@
 <template>
-  <div class="flex flex-col gap-4 p-4 sm:p-3">
+  <div class="flex flex-col gap-6 p-4 sm:p-3">
     <!-- 標題與登出按鈕 -->
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h1 class="text-xl font-semibold text-gray-800 sm:text-lg">攝影機設定</h1>
-      <div class="flex items-center gap-2 sm:gap-4">
+      <div class="flex items-center gap-3 sm:gap-4">
         <span class="text-xs text-gray-600 sm:text-sm">{{ authStore.username }}</span>
         <el-button type="danger" size="small" @click="handleLogout">登出</el-button>
       </div>
     </div>
 
     <!-- 搜尋與操作工具列 -->
-    <div class="flex flex-col gap-3 items-start">
+    <div class="flex flex-col gap-6 items-start">
       <!-- 搜尋框 -->
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜尋攝影機 (名稱、編號、城市)"
+      <el-select
+        v-model="searchKeywords"
+        multiple
+        filterable
         clearable
-        class="!w-60"
-      />
+        collapse-tags
+        placeholder="搜尋攝影機 (名稱、編號、縣市、預置點)"
+        class="!w-80"
+      >
+        <el-option-group
+          v-for="group in groupedSearchOptions"
+          :key="group.label"
+          :label="group.label"
+        >
+          <el-option
+            v-for="item in group.options"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-option-group>
+      </el-select>
 
       <!-- 操作按鈕群組 -->
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap gap-6">
         <!-- 管理者可以新增/刪除攝影機 -->
         <template v-if="authStore.isAdmin">
           <el-button type="success" @click="handleAddCamera">
@@ -37,7 +53,7 @@
           :loading="saving"
           :disabled="!hasChanges"
           @click="handleSave"
-          class="breathing-button w-full sm:w-auto"
+          class="breathing-button w-full sm:w-auto !ml-0 md:!ml-3"
         >
           儲存變更
         </el-button>
@@ -258,7 +274,7 @@ const cameras = ref<CameraItem[]>([
 
 const originalCameras = ref<CameraItem[]>(JSON.parse(JSON.stringify(cameras.value)) as CameraItem[])
 
-const searchKeyword = ref('')
+const searchKeywords = ref<string[]>([])
 
 const sortState = reactive<{
   prop: keyof CameraItem | null
@@ -305,27 +321,66 @@ const imageUploads = ref<
 const { isMobile } = useResponsive()
 
 /**
+ * 搜尋選項分組
+ */
+const groupedSearchOptions = computed(() => {
+  const cities = new Set<string>()
+  const cameraNos = new Set<string>()
+  const cameraNames = new Set<string>()
+  const pointNames = new Set<string>()
+
+  cameras.value.forEach((camera) => {
+    if (camera.City) cities.add(camera.City)
+    if (camera.CameraNo) cameraNos.add(camera.CameraNo)
+    if (camera.CameraName) cameraNames.add(camera.CameraName)
+    camera.CameraPoints.forEach((point) => {
+      if (point.CameraPointName) pointNames.add(point.CameraPointName)
+    })
+  })
+
+  return [
+    {
+      label: '縣市',
+      options: Array.from(cities).map((c) => ({ label: c, value: c })),
+    },
+    {
+      label: '攝影機名稱',
+      options: Array.from(cameraNames).map((c) => ({ label: c, value: c })),
+    },
+    {
+      label: '攝影機編號',
+      options: Array.from(cameraNos).map((c) => ({ label: c, value: c })),
+    },
+    {
+      label: '預置點',
+      options: Array.from(pointNames).map((c) => ({ label: c, value: c })),
+    },
+  ]
+})
+
+/**
  * 過濾並排序攝影機列表
  * @returns 過濾和排序後的攝影機陣列
  */
 const filteredCameras = computed(() => {
   let result = [...cameras.value]
 
-  if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.trim().toLowerCase()
+  if (searchKeywords.value.length > 0) {
     result = result.filter((item) => {
-      // 搜尋：城市、編號、攝影機名稱
-      const basicMatch =
-        item.City?.toLowerCase().includes(keyword) ||
-        item.CameraNo?.toLowerCase().includes(keyword) ||
-        item.CameraName?.toLowerCase().includes(keyword)
+      // 多條件過濾：需滿足所有選中的關鍵字
+      return searchKeywords.value.every((keyword) => {
+        const k = keyword.toLowerCase()
+        const basicMatch =
+          item.City?.toLowerCase().includes(k) ||
+          item.CameraNo?.toLowerCase().includes(k) ||
+          item.CameraName?.toLowerCase().includes(k)
 
-      // 搜尋：預置點名稱
-      const pointMatch = item.CameraPoints.some((p) =>
-        p.CameraPointName?.toLowerCase().includes(keyword),
-      )
+        const pointMatch = item.CameraPoints.some((p) =>
+          p.CameraPointName?.toLowerCase().includes(k),
+        )
 
-      return basicMatch || pointMatch
+        return basicMatch || pointMatch
+      })
     })
   }
 
@@ -538,6 +593,8 @@ function handleLockViewChange(cameraId: number, presetId: number | undefined): v
       // 鎖定指定預置點
       camera.IsLock = true
       camera.CurrentPointId = presetId
+      // 當攝影機視角有選擇預置點時, 該攝影機的輪巡開關要切換成關閉
+      camera.IsSpin = false
     } else {
       // 解鎖
       camera.IsLock = false
@@ -744,7 +801,6 @@ async function handleSave(): Promise<void> {
     // 收集所有變更的資料
     const changes: Array<any> = []
 
-    // 找出所有有變更的攝影機
     // 找出所有有變更的攝影機
     cameras.value.forEach((camera) => {
       if (isRowDirty(camera.CameraId)) {

@@ -106,9 +106,9 @@
           </div>
         </div>
       </div>
-      <el-form-item>
+      <div class="flex justify-center mt-6">
         <el-button type="primary" @click="handleAddPreset">新增預置點</el-button>
-      </el-form-item>
+      </div>
     </el-form>
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
