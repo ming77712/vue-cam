@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="預置點視角與可視圖"
+    title="預置點視角與場景"
     :width="dialogWidth"
     class="preset-view-dialog"
     @update:model-value="(val: boolean) => $emit('update:visible', val)"
@@ -15,7 +15,7 @@
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
           <div class="mb-2 flex items-center justify-between">
-            <h4 class="text-sm font-medium text-gray-700">視角圖</h4>
+            <h4 class="text-sm font-medium text-gray-700">視角</h4>
             <el-upload
               v-if="isAdmin"
               :show-file-list="false"
@@ -31,7 +31,7 @@
           >
             <img
               :src="viewImage.imageData.value.previewUrl || presetView?.viewImage || getPlaceholderImage('view')"
-              :alt="`${presetView?.presetName} 視角圖`"
+              :alt="`${presetView?.presetName} 視角`"
               class="max-h-64 w-full rounded object-contain"
               @error="(e) => handleImageError(e, 'view')"
             />
@@ -39,7 +39,7 @@
         </div>
         <div>
           <div class="mb-2 flex items-center justify-between">
-            <h4 class="text-sm font-medium text-gray-700">可視圖</h4>
+            <h4 class="text-sm font-medium text-gray-700">場景</h4>
             <el-upload
               v-if="isAdmin"
               :show-file-list="false"
@@ -57,7 +57,7 @@
               :src="
                 locationImage.imageData.value.previewUrl || presetView?.locationImage || getPlaceholderImage('location')
               "
-              :alt="`${presetView?.presetName} 可視圖`"
+              :alt="`${presetView?.presetName} 場景`"
               class="max-h-64 w-full rounded object-contain"
               @error="(e) => handleImageError(e, 'location')"
             />
@@ -92,8 +92,8 @@ import { useDialogWidth, useImageUpload } from '../composables'
 import { ElMessage } from 'element-plus'
 
 /**
- * 預置點視角與點位圖對話框組件
- * 顯示預置點的視角圖和實際點位圖
+ * 預置點視角與場景對話框組件
+ * 顯示預置點的視角和場景
  * 管理者可以上傳新的圖片
  */
 
@@ -135,7 +135,7 @@ const viewImage = useImageUpload({
 })
 
 /**
- * 可視圖上傳處理
+ * 場景圖上傳處理
  */
 const locationImage = useImageUpload({
   maxSize: 5 * 1024 * 1024,
