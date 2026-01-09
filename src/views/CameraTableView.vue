@@ -17,7 +17,6 @@
         multiple
         filterable
         clearable
-        collapse-tags
         placeholder="搜尋攝影機 (名稱、編號、縣市、預置點)"
         class="!w-80"
       >
@@ -367,8 +366,8 @@ const filteredCameras = computed(() => {
 
   if (searchKeywords.value.length > 0) {
     result = result.filter((item) => {
-      // 多條件過濾：需滿足所有選中的關鍵字
-      return searchKeywords.value.every((keyword) => {
+      // 多選搜尋：只要滿足任一選中的關鍵字即可
+      return searchKeywords.value.some((keyword) => {
         const k = keyword.toLowerCase()
         const basicMatch =
           item.City?.toLowerCase().includes(k) ||

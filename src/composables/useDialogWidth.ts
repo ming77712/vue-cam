@@ -25,10 +25,10 @@ export interface DialogWidthBreakpoints {
  *
  * @example
  * ```ts
- * // 使用預設配置（適合小型對話框，如 AddPresetDialog）
+ * // 使用預設配置（適合小型對話框）
  * const dialogWidth = useDialogWidth()
  *
- * // 自訂配置（適合大型對話框，如 PresetViewDialog）
+ * // 自訂配置（適合大型對話框）
  * const dialogWidth = useDialogWidth({
  *   small: '95%',
  *   medium: '90%',
