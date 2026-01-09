@@ -34,9 +34,9 @@
             />
           </div>
 
-          <!-- 輪巡 -->
+          <!-- 巡弋 -->
           <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-            <span class="text-sm font-medium text-gray-700">輪巡</span>
+            <span class="text-sm font-medium text-gray-700">巡弋</span>
             <el-switch
               :model-value="camera.IsSpin"
               :disabled="!isAuthenticated"

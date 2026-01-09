@@ -17,6 +17,9 @@
         multiple
         filterable
         clearable
+        allow-create
+        default-first-option
+        :reserve-keyword="false"
         placeholder="搜尋攝影機 (名稱、編號、縣市、預置點)"
         class="!w-80"
       >
@@ -71,7 +74,14 @@
         @selection-change="handleSelectionChange"
       >
         <!-- 選擇欄（僅管理者可見） -->
-        <el-table-column v-if="authStore.isAdmin" type="selection" width="55" />
+        <el-table-column v-if="authStore.isAdmin" type="selection" width="45" />
+        <el-table-column
+          prop="CameraNo"
+          label="攝影機編號"
+          sortable="custom"
+          width="120"
+          show-overflow-tooltip
+        />
         <el-table-column
           prop="CameraName"
           label="攝影機"
@@ -82,8 +92,7 @@
         <el-table-column
           prop="WantToBot"
           label="推播"
-          sortable="custom"
-          width="110"
+          width="80"
           align="center"
         >
           <template #default="{ row }">
@@ -94,7 +103,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="輪巡" sortable="custom" width="110" align="center">
+        <el-table-column label="巡弋" width="80" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="row.IsSpin"
@@ -225,7 +234,7 @@ const cameras = ref<CameraItem[]>([
         CameraPointId: 123,
         DocGuid: '000-0000-00000',
         CameraPointNo: 1,
-        CameraPointName: '中油',
+        CameraPointName: '預置點1',
         CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
         CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
         IsSpinToTarget: true,
@@ -248,7 +257,7 @@ const cameras = ref<CameraItem[]>([
         CameraPointId: 155,
         DocGuid: '000-0000-00000',
         CameraPointNo: 2,
-        CameraPointName: '中石化',
+        CameraPointName: '預置點2',
         CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
         CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
         IsSpinToTarget: true,
@@ -269,6 +278,68 @@ const cameras = ref<CameraItem[]>([
       },
     ],
   },
+  {
+    CityId: 630001,
+    City: '新北市',
+    DocGuid: '000-0000-00001',
+    CameraId: 2,
+    CameraNo: 'CAM_02',
+    CameraName: '大門口二號',
+    IsSpin: true,
+    WantToBot: true,
+    IsLock: false,
+    HLSUrl: 'URL',
+    CurrentPointId: 1,
+    CurrentPointDateTime: '2026/01/08 14:15',
+    CameraPoints: [
+      {
+        CameraPointId: 124,
+        DocGuid: '000-0000-00001',
+        CameraPointNo: 1,
+        CameraPointName: '預置點1',
+        CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
+        CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
+        IsSpinToTarget: true,
+        ChangePointSec: 10,
+        Schedule: [
+          {
+            StartTime: '09:30:00.000',
+            EndTime: '09:35:00.000',
+            IsEnabled: true,
+          },
+          {
+            StartTime: '10:30:00.000',
+            EndTime: '10:35:00.000',
+            IsEnabled: true,
+          },
+        ],
+        Checked: true,
+      },
+      {
+        CameraPointId: 156,
+        DocGuid: '000-0000-00002',
+        CameraPointNo: 2,
+        CameraPointName: '預置點2',
+        CameraPointAreaPic: '/image/camerapoint/cam_01-1.png',
+        CameraPointScenePic: '/api/v1/camerapoint/scene?docguid=000-0000-00000',
+        IsSpinToTarget: true,
+        ChangePointSec: 30,
+        Schedule: [
+          {
+            StartTime: '09:30:00.000',
+            EndTime: '09:35:00.000',
+            IsEnabled: true,
+          },
+          {
+            StartTime: '10:30:00.000',
+            EndTime: '10:35:00.000',
+            IsEnabled: true,
+          },
+        ],
+        Checked: false,
+      },
+    ],
+  }
 ])
 
 const originalCameras = ref<CameraItem[]>(JSON.parse(JSON.stringify(cameras.value)) as CameraItem[])
@@ -440,7 +511,7 @@ function isRowDirty(cameraId: number): boolean {
   // 檢查推播狀態
   if (current.WantToBot !== original.WantToBot) return true
 
-  // 檢查是否輪巡
+  // 檢查是否巡弋
   if (current.IsSpin !== original.IsSpin) return true
 
   // 檢查鎖定視角
@@ -567,9 +638,9 @@ function handlePushEnabledChange(cameraId: number, enabled: boolean): void {
 }
 
 /**
- * 處理是否輪巡狀態變更
+ * 處理是否巡弋狀態變更
  * @param cameraId - 攝影機 ID
- * @param isSpin - 是否輪巡
+ * @param isSpin - 是否巡弋
  */
 function handleIsSpinChange(cameraId: number, isSpin: boolean): void {
   const camera = cameras.value.find((c) => c.CameraId === cameraId)
@@ -592,7 +663,7 @@ function handleLockViewChange(cameraId: number, presetId: number | undefined): v
       // 鎖定指定預置點
       camera.IsLock = true
       camera.CurrentPointId = presetId
-      // 當攝影機視角有選擇預置點時, 該攝影機的輪巡開關要切換成關閉
+      // 當攝影機視角有選擇預置點時, 該攝影機的巡弋開關要切換成關閉
       camera.IsSpin = false
     } else {
       // 解鎖
